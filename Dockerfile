@@ -15,8 +15,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 FROM base AS build
 WORKDIR /src/prometheus-pve-exporter
 ADD . /src/prometheus-pve-exporter
-# build wheels (same behaviour as original)
-RUN python3 -m pip wheel -w dist --no-binary "cffi" --no-binary "pyyaml" -r requirements.txt && \
+# ensure build tooling is present then build wheels (same behaviour as original)
+RUN python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel build && \
+    python3 -m pip wheel -w dist --no-binary "cffi" --no-binary "pyyaml" -r requirements.txt && \
     python3 -m build .
 
 # Runtime: use the same slim image (glibc) and install wheel
