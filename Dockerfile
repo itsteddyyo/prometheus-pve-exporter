@@ -1,37 +1,42 @@
-FROM alpine:3.22.0 as base
+# Use Debian slim for build to generate wheels compatible with glibc runtime
+FROM python:3.11-slim AS base
 
-FROM base as build
-RUN apk update && apk add --no-cache \
-    build-base \
-    ca-certificates \
-    libffi-dev \
-    py3-build \
-    py3-pip \
-    python3 \
+# Tools needed for building wheels
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
     python3-dev \
-    yaml-dev
+    python3-pip \
+    python3-venv \
+    libffi-dev \
+    libyaml-dev \
+    ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
 
-ADD . /src/prometheus-pve-exporter
+FROM base AS build
 WORKDIR /src/prometheus-pve-exporter
+ADD . /src/prometheus-pve-exporter
+# build wheels (same behaviour as original)
 RUN python3 -m pip wheel -w dist --no-binary "cffi" --no-binary "pyyaml" -r requirements.txt && \
     python3 -m build .
 
-FROM base
-RUN apk update && apk add --no-cache \
+# Runtime: use the same slim image (glibc) and install wheel
+FROM python:3.11-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    py3-pip \
-    python3
+    python3-venv \
+    python3-pip \
+ && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /src/prometheus-pve-exporter/dist /src/prometheus-pve-exporter/dist
+
 RUN python3 -m venv /opt/prometheus-pve-exporter && \
     /opt/prometheus-pve-exporter/bin/pip install /src/prometheus-pve-exporter/dist/*.whl && \
     ln -s /opt/prometheus-pve-exporter/bin/pve_exporter /usr/bin/pve_exporter && \
     rm -rf /src/prometheus-pve-exporter /root/.cache
 
-RUN addgroup -S -g 101 prometheus && \
-    adduser -D -H -S -G prometheus -u 101 prometheus
+RUN groupadd -g 101 prometheus && \
+    useradd -u 101 -g 101 -M -s /sbin/nologin prometheus
 
 USER prometheus
 EXPOSE 9221
-
 ENTRYPOINT [ "/opt/prometheus-pve-exporter/bin/pve_exporter" ]
